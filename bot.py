@@ -491,7 +491,6 @@ class DenyReasonModal(ui.Modal):
 @bot.command(
     name="ajudfheuhfjrjfjwi2w3j3wpijd3eijfoj30pi4ripj"
 )
-@commands.has_permissions(manage_guild=True)
 async def staff_application(ctx):
 
     channel = bot.get_channel(APPLICATION_POST_CHANNEL_ID)
