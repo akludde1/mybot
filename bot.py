@@ -20,6 +20,9 @@ APPEAL_CATEGORY_ID = 1536759712660455474
 # Staff role
 STAFF_ROLE_ID = 1393951328061095976
 
+# Welcome channel
+WELCOME_CHANNEL_ID = 1397563706510151871
+
 # ============================================================
 # BOT SETUP
 # ============================================================
@@ -125,7 +128,7 @@ async def create_ticket(
     guild = interaction.guild
     user = interaction.user
 
-    # Check if the user already has an open ticket
+    # Check if user already has an open ticket
     for channel_id, creator_id in active_tickets.items():
 
         if creator_id == user.id:
@@ -184,13 +187,11 @@ async def create_ticket(
 
     overwrites = {
 
-        # Nobody else can see the ticket
         guild.default_role:
             discord.PermissionOverwrite(
                 view_channel=False
             ),
 
-        # Ticket creator
         user:
             discord.PermissionOverwrite(
                 view_channel=True,
@@ -200,7 +201,6 @@ async def create_ticket(
                 embed_links=True
             ),
 
-        # Staff
         staff_role:
             discord.PermissionOverwrite(
                 view_channel=True,
@@ -238,7 +238,7 @@ async def create_ticket(
 
     active_tickets[ticket_channel.id] = user.id
 
-    # Tell user privately that ticket was created
+    # Tell user ticket was created
     await interaction.response.send_message(
         f"✅ Your ticket has been created: "
         f"{ticket_channel.mention}",
@@ -324,7 +324,7 @@ async def close(ctx):
 
         return
 
-    # Remove from active ticket list
+    # Remove from active tickets
     active_tickets.pop(
         ctx.channel.id,
         None
@@ -434,19 +434,62 @@ async def ban(
 
 
 # ============================================================
-# MEMBER JOIN
+# WELCOME MESSAGE
 # ============================================================
 
 @bot.event
 async def on_member_join(member):
 
-    channel = member.guild.system_channel
+    channel = bot.get_channel(
+        WELCOME_CHANNEL_ID
+    )
 
-    if channel:
+    if channel is None:
 
-        await channel.send(
-            f"Welcome {member.mention}!"
+        print(
+            f"Welcome channel {WELCOME_CHANNEL_ID} not found."
         )
+
+        return
+
+    embed = discord.Embed(
+        title="Welcome to MultipleSMP! 🎉",
+        description=(
+            f"Welcome {member.mention} to **MultipleSMP**!\n\n"
+            "You are the **goaatt** for joining! tysm ❤️"
+        ),
+        color=discord.Color.blurple()
+    )
+
+    # User profile picture
+    embed.set_thumbnail(
+        url=member.display_avatar.url
+    )
+
+    # User Discord banner
+    try:
+
+        user = await bot.fetch_user(
+            member.id
+        )
+
+        if user.banner:
+
+            embed.set_image(
+                url=user.banner.url
+            )
+
+    except discord.HTTPException:
+
+        pass
+
+    embed.set_footer(
+        text=f"Member #{member.guild.member_count}"
+    )
+
+    await channel.send(
+        embed=embed
+    )
 
 
 # ============================================================
@@ -456,11 +499,23 @@ async def on_member_join(member):
 @bot.event
 async def on_ready():
 
-    print(f"Logged in as {bot.user}")
-    print(f"Connected to {len(bot.guilds)} server(s)")
-    print("Ticket system loaded.")
+    print(
+        f"Logged in as {bot.user}"
+    )
 
-    # Make ticket dropdown survive bot restarts
+    print(
+        f"Connected to {len(bot.guilds)} server(s)"
+    )
+
+    print(
+        "Ticket system loaded."
+    )
+
+    print(
+        "Welcome system loaded."
+    )
+
+    # Keep ticket dropdown working after restarts
     bot.add_view(
         TicketPanelView()
     )
