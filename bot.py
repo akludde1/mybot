@@ -1470,24 +1470,15 @@ async def ping(ctx):
 
 
 @bot.command()
-async def say(
-    ctx,
-    *,
-    message
-):
-
-    try:
-
-        await ctx.message.delete()
-
-    except discord.Forbidden:
-
-        pass
-
-    await ctx.send(
-        message
+@commands.has_permissions(ban_members=True)
+async def punish(ctx, member: discord.Member):
+    await member.ban(
+        reason=f"Banned by {ctx.author}"
     )
 
+    await ctx.send(
+        f"# {member.mention} has been punished! ❌"
+    )
 
 @bot.command()
 async def info(
