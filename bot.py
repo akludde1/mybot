@@ -2,6 +2,7 @@ import os
 import random
 import re
 import asyncio
+import time
 
 import discord
 from discord.ext import commands
@@ -14,7 +15,9 @@ from discord import ui
 
 TOKEN = os.environ["TOKEN"]
 
-# ---------------- TICKETS ----------------
+# ============================================================
+# TICKET CONFIG
+# ============================================================
 
 TICKET_PANEL_CHANNEL_ID = 1397525433624428554
 
@@ -24,11 +27,15 @@ APPEAL_CATEGORY_ID = 1536759712660455474
 
 STAFF_ROLE_ID = 1393951328061095976
 
-# ---------------- WELCOME ----------------
+# ============================================================
+# WELCOME CONFIG
+# ============================================================
 
 WELCOME_CHANNEL_ID = 1397563706510151871
 
-# ---------------- GIVEAWAYS ----------------
+# ============================================================
+# GIVEAWAY CONFIG
+# ============================================================
 
 # Role allowed to use !gway
 GIVEAWAY_COMMAND_ROLE_ID = 1391071302890033355
@@ -36,7 +43,7 @@ GIVEAWAY_COMMAND_ROLE_ID = 1391071302890033355
 # Staff role pinged when winners are announced
 GIVEAWAY_STAFF_ROLE_ID = 1393951328061095976
 
-# Category for automatic giveaway winner tickets
+# Category where automatic giveaway winner tickets are created
 GIVEAWAY_TICKET_CATEGORY_ID = 1394270405707043059
 
 
@@ -67,7 +74,7 @@ active_tickets = {}
 # ACTIVE GIVEAWAYS
 # ============================================================
 
-# giveaway_message_id -> giveaway information
+# giveaway_message_id -> giveaway data
 active_giveaways = {}
 
 
@@ -166,7 +173,7 @@ async def create_ticket(
     user = interaction.user
 
     # --------------------------------------------------------
-    # Check existing ticket
+    # Check if user already has a ticket
     # --------------------------------------------------------
 
     for channel_id, creator_id in active_tickets.items():
@@ -192,13 +199,9 @@ async def create_ticket(
     # --------------------------------------------------------
 
     categories = {
-
         "support": SUPPORT_CATEGORY_ID,
-
         "billing": BILLING_CATEGORY_ID,
-
         "appeal": APPEAL_CATEGORY_ID
-
     }
 
     category = guild.get_channel(
@@ -260,7 +263,6 @@ async def create_ticket(
                 embed_links=True,
                 manage_messages=True
             )
-
     }
 
     # --------------------------------------------------------
@@ -277,7 +279,7 @@ async def create_ticket(
     channel_name = f"ticket-{safe_name}"
 
     # --------------------------------------------------------
-    # Create channel
+    # Create ticket
     # --------------------------------------------------------
 
     ticket_channel = await guild.create_text_channel(
@@ -292,7 +294,7 @@ async def create_ticket(
     ] = user.id
 
     # --------------------------------------------------------
-    # Private confirmation
+    # Confirmation
     # --------------------------------------------------------
 
     await interaction.response.send_message(
@@ -311,7 +313,7 @@ async def create_ticket(
     )
 
     # --------------------------------------------------------
-    # Pin message
+    # Pin opening message
     # --------------------------------------------------------
 
     try:
@@ -399,7 +401,7 @@ async def close(ctx):
         return
 
     # --------------------------------------------------------
-    # Remove from active tickets
+    # Remove ticket
     # --------------------------------------------------------
 
     active_tickets.pop(
@@ -408,7 +410,7 @@ async def close(ctx):
     )
 
     # --------------------------------------------------------
-    # Delete immediately
+    # Delete instantly
     # --------------------------------------------------------
 
     await ctx.channel.delete(
@@ -454,7 +456,6 @@ def parse_duration(duration_text):
 
     unit = match.group(2)
 
-    # Seconds
     if unit in [
         "s",
         "sec",
@@ -465,7 +466,6 @@ def parse_duration(duration_text):
 
         seconds = amount
 
-    # Minutes
     elif unit in [
         "m",
         "min",
@@ -476,7 +476,6 @@ def parse_duration(duration_text):
 
         seconds = amount * 60
 
-    # Hours
     elif unit in [
         "h",
         "hr",
@@ -487,7 +486,6 @@ def parse_duration(duration_text):
 
         seconds = amount * 60 * 60
 
-    # Days
     elif unit in [
         "d",
         "day",
@@ -504,6 +502,39 @@ def parse_duration(duration_text):
 
 
 # ============================================================
+# GIVEAWAY EMBED
+# ============================================================
+
+def create_giveaway_embed(giveaway):
+
+    embed = discord.Embed(
+        title="🎉 GIVEAWAY 🎉",
+        description=(
+            f"**Prize**\n"
+            f"{giveaway['prize']}\n\n"
+
+            f"**Ends**\n"
+            f"<t:{giveaway['end_time']}:R>\n\n"
+
+            f"**Winners**\n"
+            f"{giveaway['winner_count']}\n\n"
+
+            f"**Entries**\n"
+            f"{len(giveaway['entries'])}\n\n"
+
+            "Click the button below to enter!"
+        ),
+        color=discord.Color.gold()
+    )
+
+    embed.set_footer(
+        text="MultipleSMP Giveaway"
+    )
+
+    return embed
+
+
+# ============================================================
 # GIVEAWAY FORM VIEW
 # ============================================================
 
@@ -517,19 +548,30 @@ class GiveawayFormView(ui.View):
 
         self.channel = channel
 
-    @ui.button(
-        label="Create Giveaway",
-        style=discord.ButtonStyle.success
-    )
-    async def create(
+        self.add_item(
+            GiveawayCreateButton()
+        )
+
+
+class GiveawayCreateButton(
+    ui.Button
+):
+
+    def __init__(self):
+
+        super().__init__(
+            label="Create",
+            style=discord.ButtonStyle.success
+        )
+
+    async def callback(
         self,
-        interaction,
-        button
+        interaction
     ):
 
         await interaction.response.send_modal(
             GiveawayModal(
-                self.channel
+                self.view.channel
             )
         )
 
@@ -563,7 +605,7 @@ class GiveawayModal(ui.Modal):
         )
 
         self.winners = ui.TextInput(
-            label="Number of Winners",
+            label="Winners",
             placeholder="Example: 1",
             required=True,
             max_length=3
@@ -610,8 +652,17 @@ class GiveawayModal(ui.Modal):
 
             return
 
+        if duration_seconds <= 0:
+
+            await interaction.response.send_message(
+                "❌ Duration must be greater than 0.",
+                ephemeral=True
+            )
+
+            return
+
         # ----------------------------------------------------
-        # Parse winners
+        # Parse winner count
         # ----------------------------------------------------
 
         try:
@@ -639,47 +690,21 @@ class GiveawayModal(ui.Modal):
             return
 
         # ----------------------------------------------------
-        # Create giveaway message
+        # Calculate ending timestamp
         # ----------------------------------------------------
 
-        embed = discord.Embed(
-            title="🎉 GIVEAWAY 🎉",
-            description=(
-                f"**Prize**\n"
-                f"{self.prize.value}\n\n"
-
-                f"**Duration**\n"
-                f"{self.duration.value}\n\n"
-
-                f"**Winners**\n"
-                f"{winner_count}\n\n"
-
-                "Click the button below to enter!"
-            ),
-            color=discord.Color.gold()
-        )
-
-        embed.set_footer(
-            text="MultipleSMP Giveaway"
-        )
-
-        giveaway_message = await self.channel.send(
-            embed=embed,
-            view=GiveawayView()
+        end_time = (
+            int(time.time())
+            + duration_seconds
         )
 
         # ----------------------------------------------------
-        # Store giveaway
+        # Create giveaway data
         # ----------------------------------------------------
 
-        giveaway_id = giveaway_message.id
+        giveaway = {
 
-        active_giveaways[
-            giveaway_id
-        ] = {
-
-            "message_id":
-                giveaway_id,
+            "message_id": None,
 
             "channel_id":
                 self.channel.id,
@@ -693,6 +718,9 @@ class GiveawayModal(ui.Modal):
             "duration_seconds":
                 duration_seconds,
 
+            "end_time":
+                end_time,
+
             "winner_count":
                 winner_count,
 
@@ -701,11 +729,33 @@ class GiveawayModal(ui.Modal):
 
             "creator_id":
                 interaction.user.id
-
         }
 
         # ----------------------------------------------------
-        # Confirm privately
+        # Send giveaway
+        # ----------------------------------------------------
+
+        giveaway_message = await self.channel.send(
+            embed=create_giveaway_embed(
+                giveaway
+            ),
+            view=GiveawayView()
+        )
+
+        # ----------------------------------------------------
+        # Save message ID
+        # ----------------------------------------------------
+
+        giveaway["message_id"] = (
+            giveaway_message.id
+        )
+
+        active_giveaways[
+            giveaway_message.id
+        ] = giveaway
+
+        # ----------------------------------------------------
+        # Private confirmation
         # ----------------------------------------------------
 
         await interaction.response.send_message(
@@ -714,12 +764,12 @@ class GiveawayModal(ui.Modal):
         )
 
         # ----------------------------------------------------
-        # Start timer
+        # Start giveaway timer
         # ----------------------------------------------------
 
         asyncio.create_task(
             finish_giveaway(
-                giveaway_id
+                giveaway_message.id
             )
         )
 
@@ -741,7 +791,9 @@ class GiveawayView(ui.View):
         )
 
 
-class GiveawayEnterButton(ui.Button):
+class GiveawayEnterButton(
+    ui.Button
+):
 
     def __init__(self):
 
@@ -775,7 +827,7 @@ class GiveawayEnterButton(ui.Button):
         ]
 
         # ----------------------------------------------------
-        # Leave giveaway if already entered
+        # Remove entry
         # ----------------------------------------------------
 
         if interaction.user.id in entries:
@@ -784,23 +836,47 @@ class GiveawayEnterButton(ui.Button):
                 interaction.user.id
             )
 
-            await interaction.response.send_message(
-                "❌ You have left the giveaway.",
-                ephemeral=True
+            message = (
+                "❌ You have left the giveaway."
             )
 
-            return
-
         # ----------------------------------------------------
-        # Enter giveaway
+        # Add entry
         # ----------------------------------------------------
 
-        entries.add(
-            interaction.user.id
-        )
+        else:
+
+            entries.add(
+                interaction.user.id
+            )
+
+            message = (
+                "🎉 You have entered the giveaway!"
+            )
+
+        # ----------------------------------------------------
+        # Update giveaway embed
+        # ----------------------------------------------------
+
+        try:
+
+            await interaction.message.edit(
+                embed=create_giveaway_embed(
+                    giveaway
+                ),
+                view=GiveawayView()
+            )
+
+        except discord.HTTPException:
+
+            pass
+
+        # ----------------------------------------------------
+        # Tell user
+        # ----------------------------------------------------
 
         await interaction.response.send_message(
-            "🎉 You have entered the giveaway!",
+            message,
             ephemeral=True
         )
 
@@ -822,7 +898,7 @@ async def finish_giveaway(
         return
 
     # --------------------------------------------------------
-    # Wait for giveaway duration
+    # Wait
     # --------------------------------------------------------
 
     await asyncio.sleep(
@@ -830,7 +906,7 @@ async def finish_giveaway(
     )
 
     # --------------------------------------------------------
-    # Remove active giveaway
+    # Remove giveaway from active list
     # --------------------------------------------------------
 
     giveaway = active_giveaways.pop(
@@ -855,7 +931,7 @@ async def finish_giveaway(
         return
 
     # --------------------------------------------------------
-    # Disable giveaway button
+    # Disable button
     # --------------------------------------------------------
 
     try:
@@ -873,12 +949,16 @@ async def finish_giveaway(
         pass
 
     # --------------------------------------------------------
-    # Get entries
+    # Entries
     # --------------------------------------------------------
 
     entries = list(
         giveaway["entries"]
     )
+
+    # --------------------------------------------------------
+    # Nobody entered
+    # --------------------------------------------------------
 
     if not entries:
 
@@ -925,8 +1005,8 @@ async def finish_giveaway(
     if not winners:
 
         await channel.send(
-            "❌ The giveaway ended, but I couldn't find "
-            "the winners."
+            "❌ The giveaway ended, but I couldn't "
+            "find the winners."
         )
 
         return
@@ -950,7 +1030,9 @@ async def finish_giveaway(
 
     if staff_role:
 
-        staff_mention = staff_role.mention
+        staff_mention = (
+            staff_role.mention
+        )
 
     else:
 
@@ -979,8 +1061,9 @@ async def finish_giveaway(
     if category is None:
 
         await channel.send(
-            "⚠️ I couldn't create the winner tickets because "
-            "the giveaway ticket category was not found."
+            "⚠️ I couldn't create the winner tickets "
+            "because the giveaway ticket category "
+            "was not found."
         )
 
         return
@@ -992,14 +1075,14 @@ async def finish_giveaway(
     if staff_role is None:
 
         await channel.send(
-            "⚠️ I couldn't create the winner tickets because "
-            "the staff role was not found."
+            "⚠️ I couldn't create the winner tickets "
+            "because the staff role was not found."
         )
 
         return
 
     # --------------------------------------------------------
-    # Create ticket for every winner
+    # Create ticket for each winner
     # --------------------------------------------------------
 
     for winner in winners:
@@ -1029,7 +1112,6 @@ async def finish_giveaway(
                     embed_links=True,
                     manage_messages=True
                 )
-
         }
 
         safe_name = "".join(
@@ -1083,7 +1165,7 @@ async def giveaway_command(ctx):
     )
 
     # --------------------------------------------------------
-    # Role doesn't exist
+    # Role check
     # --------------------------------------------------------
 
     if role is None:
@@ -1095,10 +1177,6 @@ async def giveaway_command(ctx):
 
         return
 
-    # --------------------------------------------------------
-    # Permission check
-    # --------------------------------------------------------
-
     if role not in ctx.author.roles:
 
         await ctx.send(
@@ -1109,14 +1187,14 @@ async def giveaway_command(ctx):
         return
 
     # --------------------------------------------------------
-    # Open form privately in DM
+    # Open private DM form
     # --------------------------------------------------------
 
     try:
 
         await ctx.author.send(
             "📋 **Giveaway Creator**\n\n"
-            "Click the button below to create your giveaway.",
+            "Click **Create** below to set up your giveaway.",
             view=GiveawayFormView(
                 ctx.channel
             )
@@ -1270,10 +1348,6 @@ async def on_member_join(member):
 
         return
 
-    # --------------------------------------------------------
-    # Welcome embed
-    # --------------------------------------------------------
-
     embed = discord.Embed(
         title="Welcome to MultipleSMP! 🎉",
         description=(
@@ -1283,18 +1357,12 @@ async def on_member_join(member):
         color=discord.Color.blurple()
     )
 
-    # --------------------------------------------------------
-    # Profile picture
-    # --------------------------------------------------------
-
+    # User profile picture
     embed.set_thumbnail(
         url=member.display_avatar.url
     )
 
-    # --------------------------------------------------------
-    # Discord banner
-    # --------------------------------------------------------
-
+    # User banner
     try:
 
         user = await bot.fetch_user(
@@ -1310,10 +1378,6 @@ async def on_member_join(member):
     except discord.HTTPException:
 
         pass
-
-    # --------------------------------------------------------
-    # Footer
-    # --------------------------------------------------------
 
     embed.set_footer(
         text=f"Member #{member.guild.member_count}"
@@ -1351,10 +1415,7 @@ async def on_ready():
         "Giveaway system loaded."
     )
 
-    # --------------------------------------------------------
-    # Persistent ticket button
-    # --------------------------------------------------------
-
+    # Persistent ticket dropdown
     try:
 
         bot.add_view(
@@ -1365,10 +1426,7 @@ async def on_ready():
 
         pass
 
-    # --------------------------------------------------------
     # Persistent giveaway button
-    # --------------------------------------------------------
-
     try:
 
         bot.add_view(
