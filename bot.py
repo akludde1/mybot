@@ -1,16 +1,27 @@
+```python
 import os
 import discord
 from discord.ext import commands
 from discord import ui
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 TOKEN = os.environ["TOKEN"]
 
+# ============================================================
+# CHANNEL / ROLE IDS
+# ============================================================
+
+# Staff applications
 APPLICATION_POST_CHANNEL_ID = 1536742885200756856
 APPLICATION_REVIEW_CHANNEL_ID = 1536744148042911974
+
+# Tickets
+TICKET_PANEL_CHANNEL_ID = 1536754341535424633
+
+SUPPORT_CATEGORY_ID = 1536753783021904053
+BILLING_CATEGORY_ID = 1536754163289956412
+APPEAL_CATEGORY_ID = 1536754243610873976
+
+STAFF_ROLE_ID = 1536746004110516306
 
 # ============================================================
 # BOT SETUP
@@ -26,7 +37,7 @@ bot = commands.Bot(
 )
 
 # ============================================================
-# STAFF APPLICATION QUESTIONS
+# APPLICATION SYSTEM
 # ============================================================
 
 QUESTIONS = [
@@ -42,12 +53,8 @@ QUESTIONS = [
     "Is there anything else you'd like us to know about you?"
 ]
 
-# Active applications
 active_applications = {}
 
-# ============================================================
-# STAFF APPLICATION EMBED
-# ============================================================
 
 def application_embed():
     embed = discord.Embed(
@@ -62,16 +69,8 @@ def application_embed():
         color=discord.Color.green()
     )
 
-    embed.set_footer(
-        text="MultipleSMP Staff Applications"
-    )
-
     return embed
 
-
-# ============================================================
-# APPLY BUTTON
-# ============================================================
 
 class ApplyView(ui.View):
 
@@ -83,82 +82,55 @@ class ApplyView(ui.View):
         style=discord.ButtonStyle.success,
         custom_id="multiplesmp_staff_apply"
     )
-    async def apply_button(
-        self,
-        interaction: discord.Interaction,
-        button: ui.Button
-    ):
+    async def apply_button(self, interaction, button):
 
-        user_id = interaction.user.id
-
-        if user_id in active_applications:
+        if interaction.user.id in active_applications:
             await interaction.response.send_message(
-                "❌ You already have an active application.",
+                "You already have an active application.",
                 ephemeral=True
             )
             return
 
-        active_applications[user_id] = {
+        active_applications[interaction.user.id] = {
             "user": interaction.user,
             "answers": [],
             "current_question": 0
         }
 
         await interaction.response.send_message(
-            "✅ Your application is starting.",
+            "Your application is starting.",
             ephemeral=True
         )
 
-        await send_question_prompt(
+        await send_question(
             interaction,
-            user_id
+            interaction.user.id
         )
 
 
-# ============================================================
-# QUESTION PROMPT
-# ============================================================
-
-async def send_question_prompt(
-    interaction: discord.Interaction,
-    user_id: int
-):
+async def send_question(interaction, user_id):
 
     application = active_applications.get(user_id)
 
-    if application is None:
+    if not application:
         return
 
-    question_number = application["current_question"]
+    number = application["current_question"]
 
-    if question_number >= len(QUESTIONS):
+    if number >= len(QUESTIONS):
         return
-
-    view = QuestionView(
-        user_id=user_id,
-        question_number=question_number
-    )
 
     await interaction.followup.send(
-        f"**Question {question_number + 1} of {len(QUESTIONS)}**\n\n"
-        f"{QUESTIONS[question_number]}\n\n"
-        f"Click **Answer Question** below.",
-        view=view,
+        f"**Question {number + 1} of {len(QUESTIONS)}**\n\n"
+        f"{QUESTIONS[number]}",
+        view=QuestionView(user_id, number),
         ephemeral=True
     )
 
 
-# ============================================================
-# QUESTION BUTTON
-# ============================================================
-
 class QuestionView(ui.View):
 
-    def __init__(
-        self,
-        user_id: int,
-        question_number: int
-    ):
+    def __init__(self, user_id, question_number):
         super().__init__(timeout=None)
 
         self.user_id = user_id
@@ -168,44 +140,32 @@ class QuestionView(ui.View):
         label="Answer Question",
         style=discord.ButtonStyle.primary
     )
-    async def answer_button(
-        self,
-        interaction: discord.Interaction,
-        button: ui.Button
-    ):
+    async def answer_button(self, interaction, button):
 
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ This isn't your application.",
+                "This isn't your application.",
                 ephemeral=True
             )
             return
 
-        modal = QuestionModal(
-            user_id=self.user_id,
-            question_number=self.question_number
+        await interaction.response.send_modal(
+            QuestionModal(
+                self.user_id,
+                self.question_number
+            )
         )
 
-        await interaction.response.send_modal(modal)
-
-
-# ============================================================
-# QUESTION MODAL
-# ============================================================
 
 class QuestionModal(ui.Modal):
 
-    def __init__(
-        self,
-        user_id: int,
-        question_number: int
-    ):
+    def __init__(self, user_id, question_number):
 
         self.user_id = user_id
         self.question_number = question_number
 
         super().__init__(
-            title=f"Question {question_number + 1} of {len(QUESTIONS)}"
+            title=f"Question {question_number + 1}"
         )
 
         self.answer = ui.TextInput(
@@ -218,71 +178,53 @@ class QuestionModal(ui.Modal):
 
         self.add_item(self.answer)
 
-    async def on_submit(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def on_submit(self, interaction):
 
         application = active_applications.get(self.user_id)
 
-        if application is None:
+        if not application:
             await interaction.response.send_message(
-                "❌ Your application is no longer active.",
+                "Your application is no longer active.",
                 ephemeral=True
             )
             return
 
-        # Save answer
-        application["answers"].append(
-            self.answer.value
-        )
+        application["answers"].append(self.answer.value)
 
         next_question = self.question_number + 1
 
-        # More questions
         if next_question < len(QUESTIONS):
 
             application["current_question"] = next_question
 
             await interaction.response.send_message(
-                f"✅ Answer saved.\n\n"
-                f"Next: **Question {next_question + 1} "
-                f"of {len(QUESTIONS)}**",
+                f"Answer saved. Next question: "
+                f"**{next_question + 1} of {len(QUESTIONS)}**",
                 ephemeral=True
             )
 
-            await send_question_prompt(
+            await send_question(
                 interaction,
                 self.user_id
             )
 
-        # Application finished
         else:
 
             await interaction.response.send_message(
-                "✅ **Application complete!**\n\n"
-                "Your application has been sent to the staff team.",
+                "Your application has been submitted!",
                 ephemeral=True
             )
 
             await submit_application(
-                interaction,
                 self.user_id
             )
 
 
-# ============================================================
-# SUBMIT APPLICATION TO STAFF CHANNEL
-# ============================================================
-
-async def submit_application(
-    interaction: discord.Interaction,
-    user_id: int
-):
+async def submit_application(user_id):
 
     application = active_applications.get(user_id)
 
-    if application is None:
+    if not application:
         return
 
     user = application["user"]
@@ -291,41 +233,27 @@ async def submit_application(
         APPLICATION_REVIEW_CHANNEL_ID
     )
 
-    if channel is None:
-        print(
-            "ERROR: Application review channel "
-            "could not be found."
-        )
+    if not channel:
+        print("Application review channel not found.")
         return
 
     embed = discord.Embed(
-        title="📋 New Staff Application",
-        description=(
-            f"Application from {user.mention}"
-        ),
+        title="New Staff Application",
+        description=f"Application from {user.mention}",
         color=discord.Color.blurple()
     )
 
     embed.add_field(
         name="Applicant",
-        value=(
-            f"{user.mention}\n"
-            f"`{user}`\n"
-            f"ID: `{user.id}`"
-        ),
+        value=f"{user.mention}\n`{user}`\nID: `{user.id}`",
         inline=False
     )
 
-    for index, answer in enumerate(
-        application["answers"]
-    ):
+    for i, answer in enumerate(application["answers"]):
 
         embed.add_field(
-            name=f"Question {index + 1}",
-            value=(
-                f"**{QUESTIONS[index]}**\n"
-                f"{answer}"
-            ),
+            name=f"Question {i + 1}",
+            value=f"**{QUESTIONS[i]}**\n{answer}",
             inline=False
         )
 
@@ -333,92 +261,62 @@ async def submit_application(
         url=user.display_avatar.url
     )
 
-    embed.set_footer(
-        text="MultipleSMP Staff Applications"
-    )
-
-    view = StaffReviewView(
-        applicant_id=user.id
-    )
-
-    message = await channel.send(
+    await channel.send(
         embed=embed,
-        view=view
+        view=StaffReviewView(user.id)
     )
 
-    application["review_message_id"] = message.id
+    active_applications.pop(user_id, None)
 
-
-# ============================================================
-# STAFF REVIEW VIEW
-# ============================================================
 
 class StaffReviewView(ui.View):
 
-    def __init__(self, applicant_id: int):
+    def __init__(self, applicant_id):
         super().__init__(timeout=None)
-
         self.applicant_id = applicant_id
 
-    async def check_staff(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def is_staff(self, interaction):
 
-        if not interaction.user.guild_permissions.manage_guild:
+        role = interaction.guild.get_role(
+            STAFF_ROLE_ID
+        )
+
+        if role not in interaction.user.roles:
             await interaction.response.send_message(
-                "❌ You don't have permission to review "
-                "staff applications.",
+                "You don't have permission to review applications.",
                 ephemeral=True
             )
             return False
 
         return True
 
-    # --------------------------------------------------------
-    # ACCEPT
-    # --------------------------------------------------------
-
     @ui.button(
         label="Accept",
         style=discord.ButtonStyle.success,
-        custom_id="multiplesmp_staff_accept"
+        custom_id="staff_accept"
     )
-    async def accept_button(
-        self,
-        interaction: discord.Interaction,
-        button: ui.Button
-    ):
+    async def accept(self, interaction, button):
 
-        if not await self.check_staff(interaction):
+        if not await self.is_staff(interaction):
             return
 
-        applicant = await bot.fetch_user(
+        user = await bot.fetch_user(
             self.applicant_id
         )
 
         try:
-
-            await applicant.send(
+            await user.send(
                 "🎉 **Staff Application Accepted!**\n\n"
-                "Congratulations!\n\n"
-                "Your application for **Helper** "
-                "at **MultipleSMP.net** has been accepted.\n\n"
-                "A staff member will contact you "
-                "with the next steps."
+                "Congratulations! Your application for "
+                "**Helper** at **MultipleSMP.net** has been accepted."
             )
-
-            dm_status = "Applicant was notified via DM."
+            result = "Applicant notified by DM."
 
         except discord.Forbidden:
-
-            dm_status = (
-                "⚠️ I couldn't DM the applicant. "
-                "Their DMs may be closed."
-            )
+            result = "Could not DM the applicant."
 
         await interaction.response.send_message(
-            f"✅ **Application accepted.**\n{dm_status}",
+            result,
             ephemeral=True
         )
 
@@ -428,50 +326,35 @@ class StaffReviewView(ui.View):
         await interaction.message.edit(
             view=self
         )
-
-    # --------------------------------------------------------
-    # DENY
-    # --------------------------------------------------------
 
     @ui.button(
         label="Deny",
         style=discord.ButtonStyle.danger,
-        custom_id="multiplesmp_staff_deny"
+        custom_id="staff_deny"
     )
-    async def deny_button(
-        self,
-        interaction: discord.Interaction,
-        button: ui.Button
-    ):
+    async def deny(self, interaction, button):
 
-        if not await self.check_staff(interaction):
+        if not await self.is_staff(interaction):
             return
 
-        applicant = await bot.fetch_user(
+        user = await bot.fetch_user(
             self.applicant_id
         )
 
         try:
-
-            await applicant.send(
+            await user.send(
                 "❌ **Staff Application Denied**\n\n"
-                "Thank you for applying for **Helper** "
-                "at **MultipleSMP.net**.\n\n"
-                "Unfortunately, your application "
-                "was not accepted."
+                "Thank you for applying for Helper at "
+                "**MultipleSMP.net**.\n\n"
+                "Unfortunately, your application was not accepted."
             )
-
-            dm_status = "Applicant was notified via DM."
+            result = "Applicant notified by DM."
 
         except discord.Forbidden:
-
-            dm_status = (
-                "⚠️ I couldn't DM the applicant. "
-                "Their DMs may be closed."
-            )
+            result = "Could not DM the applicant."
 
         await interaction.response.send_message(
-            f"❌ **Application denied.**\n{dm_status}",
+            result,
             ephemeral=True
         )
 
@@ -482,43 +365,27 @@ class StaffReviewView(ui.View):
             view=self
         )
 
-    # --------------------------------------------------------
-    # DENY WITH REASON
-    # --------------------------------------------------------
-
     @ui.button(
         label="Deny with reason",
         style=discord.ButtonStyle.danger,
-        custom_id="multiplesmp_staff_deny_reason"
+        custom_id="staff_deny_reason"
     )
-    async def deny_reason_button(
-        self,
-        interaction: discord.Interaction,
-        button: ui.Button
-    ):
+    async def deny_reason(self, interaction, button):
 
-        if not await self.check_staff(interaction):
+        if not await self.is_staff(interaction):
             return
 
         await interaction.response.send_modal(
             DenyReasonModal(
-                applicant_id=self.applicant_id,
-                review_view=self
+                self.applicant_id,
+                self
             )
         )
 
 
-# ============================================================
-# DENY WITH REASON MODAL
-# ============================================================
-
 class DenyReasonModal(ui.Modal):
 
-    def __init__(
-        self,
-        applicant_id: int,
-        review_view: StaffReviewView
-    ):
+    def __init__(self, applicant_id, review_view):
 
         self.applicant_id = applicant_id
         self.review_view = review_view
@@ -528,8 +395,8 @@ class DenyReasonModal(ui.Modal):
         )
 
         self.reason = ui.TextInput(
-            label="Reason for denial",
-            placeholder="Explain why the application was denied...",
+            label="Reason",
+            placeholder="Why was this application denied?",
             style=discord.TextStyle.paragraph,
             required=True,
             max_length=1500
@@ -537,37 +404,24 @@ class DenyReasonModal(ui.Modal):
 
         self.add_item(self.reason)
 
-    async def on_submit(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def on_submit(self, interaction):
 
-        applicant = await bot.fetch_user(
+        user = await bot.fetch_user(
             self.applicant_id
         )
 
         try:
-
-            await applicant.send(
+            await user.send(
                 "❌ **Staff Application Denied**\n\n"
-                "Thank you for applying for **Helper** "
-                "at **MultipleSMP.net**.\n\n"
-                f"**Reason:**\n"
-                f"{self.reason.value}"
+                f"**Reason:**\n{self.reason.value}"
             )
-
-            dm_status = "Applicant was notified via DM."
+            result = "Applicant notified by DM."
 
         except discord.Forbidden:
-
-            dm_status = (
-                "⚠️ I couldn't DM the applicant. "
-                "Their DMs may be closed."
-            )
+            result = "Could not DM the applicant."
 
         await interaction.response.send_message(
-            f"❌ **Application denied with a reason.**\n"
-            f"{dm_status}",
+            result,
             ephemeral=True
         )
 
@@ -592,30 +446,266 @@ async def staff_application(ctx):
         APPLICATION_POST_CHANNEL_ID
     )
 
-    if channel is None:
-
+    if not channel:
         await ctx.send(
-            "❌ I couldn't find the application channel.",
-            delete_after=10
+            "Application channel not found.",
+            delete_after=5
         )
-
-        print(
-            f"ERROR: Channel {APPLICATION_POST_CHANNEL_ID} "
-            "not found."
-        )
-
         return
 
-    embed = application_embed()
-
     await channel.send(
-        embed=embed,
+        embed=application_embed(),
         view=ApplyView()
     )
 
     await ctx.send(
-        "✅ Staff application panel posted.",
+        "Staff application panel posted.",
         delete_after=5
+    )
+
+
+# ============================================================
+# TICKET SYSTEM
+# ============================================================
+
+active_tickets = {}
+
+
+def ticket_embed():
+
+    embed = discord.Embed(
+        title="Tickets",
+        description=(
+            "Need help with anything?\n\n"
+            "**Open a ticket**\n"
+            "Use the boxes below to choose the category "
+            "of your inquiry."
+        ),
+        color=discord.Color.blurple()
+    )
+
+    return embed
+
+
+class TicketSelect(ui.Select):
+
+    def __init__(self):
+
+        options = [
+            discord.SelectOption(
+                label="Support/Questions",
+                description="Get help or ask a question.",
+                emoji="🛠️",
+                value="support"
+            ),
+            discord.SelectOption(
+                label="Billing",
+                description="Billing questions.",
+                emoji="💳",
+                value="billing"
+            ),
+            discord.SelectOption(
+                label="Appeal",
+                description="Submit an appeal.",
+                emoji="⚖️",
+                value="appeal"
+            )
+        ]
+
+        super().__init__(
+            placeholder="Choose a ticket category...",
+            options=options,
+            custom_id="ticket_category"
+        )
+
+    async def callback(self, interaction):
+
+        await create_ticket(
+            interaction,
+            self.values[0]
+        )
+
+
+class TicketPanelView(ui.View):
+
+    def __init__(self):
+
+        super().__init__(timeout=None)
+
+        self.add_item(
+            TicketSelect()
+        )
+
+
+async def create_ticket(
+    interaction,
+    ticket_type
+):
+
+    guild = interaction.guild
+    user = interaction.user
+
+    # Prevent multiple tickets
+    for channel_id, creator_id in active_tickets.items():
+
+        if creator_id == user.id:
+
+            existing = guild.get_channel(
+                channel_id
+            )
+
+            if existing:
+
+                await interaction.response.send_message(
+                    f"You already have a ticket: {existing.mention}",
+                    ephemeral=True
+                )
+
+                return
+
+    categories = {
+        "support": SUPPORT_CATEGORY_ID,
+        "billing": BILLING_CATEGORY_ID,
+        "appeal": APPEAL_CATEGORY_ID
+    }
+
+    category = guild.get_channel(
+        categories[ticket_type]
+    )
+
+    staff_role = guild.get_role(
+        STAFF_ROLE_ID
+    )
+
+    if not category or not staff_role:
+
+        await interaction.response.send_message(
+            "Ticket setup is incorrect. Contact an administrator.",
+            ephemeral=True
+        )
+
+        return
+
+    overwrites = {
+
+        guild.default_role:
+            discord.PermissionOverwrite(
+                view_channel=False
+            ),
+
+        user:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True
+            ),
+
+        staff_role:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                manage_messages=True
+            )
+    }
+
+    safe_name = "".join(
+        c if c.isalnum() or c == "-"
+        else "-"
+        for c in user.name.lower()
+    )
+
+    channel = await guild.create_text_channel(
+        name=f"ticket-{safe_name}",
+        category=category,
+        overwrites=overwrites,
+        reason=f"Ticket created by {user}"
+    )
+
+    active_tickets[channel.id] = user.id
+
+    await interaction.response.send_message(
+        f"Your ticket has been created: {channel.mention}",
+        ephemeral=True
+    )
+
+    message = await channel.send(
+        f"Hello {user.mention}, a staff member will be with you shortly.\n"
+        f"{staff_role.mention}"
+    )
+
+    await message.pin()
+
+
+# ============================================================
+# SECRET TICKET PANEL COMMAND
+# ============================================================
+
+@bot.command(
+    name="wedyeu9deufeuiofh39yourhfuohyigfgrg"
+)
+async def ticket_panel(ctx):
+
+    channel = bot.get_channel(
+        TICKET_PANEL_CHANNEL_ID
+    )
+
+    if not channel:
+
+        await ctx.send(
+            "Ticket panel channel not found.",
+            delete_after=5
+        )
+
+        return
+
+    await channel.send(
+        embed=ticket_embed(),
+        view=TicketPanelView()
+    )
+
+    await ctx.send(
+        "Ticket panel posted.",
+        delete_after=5
+    )
+
+
+# ============================================================
+# CLOSE TICKET
+# ============================================================
+
+@bot.command()
+async def close(ctx):
+
+    staff_role = ctx.guild.get_role(
+        STAFF_ROLE_ID
+    )
+
+    if not staff_role or staff_role not in ctx.author.roles:
+
+        await ctx.send(
+            "Only staff can close tickets.",
+            delete_after=3
+        )
+
+        return
+
+    if ctx.channel.id not in active_tickets:
+
+        await ctx.send(
+            "This is not a ticket channel.",
+            delete_after=3
+        )
+
+        return
+
+    active_tickets.pop(
+        ctx.channel.id,
+        None
+    )
+
+    await ctx.channel.delete(
+        reason=f"Ticket closed by {ctx.author}"
     )
 
 
@@ -643,10 +733,7 @@ async def say(ctx, *, message):
 
 
 @bot.command()
-async def info(
-    ctx,
-    member: discord.Member = None
-):
+async def info(ctx, member: discord.Member = None):
 
     member = member or ctx.author
 
@@ -662,11 +749,10 @@ async def info(
     )
 
     if member.joined_at:
+
         embed.add_field(
             name="Joined",
-            value=member.joined_at.strftime(
-                "%Y-%m-%d"
-            ),
+            value=member.joined_at.strftime("%Y-%m-%d"),
             inline=False
         )
 
@@ -679,39 +765,23 @@ async def info(
 
 @bot.command()
 @commands.has_permissions(kick_members=True)
-async def kick(
-    ctx,
-    member: discord.Member,
-    *,
-    reason="No reason"
-):
+async def kick(ctx, member: discord.Member, *, reason="No reason"):
 
-    await member.kick(
-        reason=reason
-    )
+    await member.kick(reason=reason)
 
     await ctx.send(
-        f"👢 Kicked {member.mention}. "
-        f"Reason: {reason}"
+        f"Kicked {member.mention}. Reason: {reason}"
     )
 
 
 @bot.command()
 @commands.has_permissions(ban_members=True)
-async def ban(
-    ctx,
-    member: discord.Member,
-    *,
-    reason="No reason"
-):
+async def ban(ctx, member: discord.Member, *, reason="No reason"):
 
-    await member.ban(
-        reason=reason
-    )
+    await member.ban(reason=reason)
 
     await ctx.send(
-        f"🔨 Banned {member.mention}. "
-        f"Reason: {reason}"
+        f"Banned {member.mention}. Reason: {reason}"
     )
 
 
@@ -725,41 +795,29 @@ async def on_member_join(member):
     channel = member.guild.system_channel
 
     if channel:
-
         await channel.send(
             f"Welcome {member.mention}!"
         )
 
 
 # ============================================================
-# BOT READY
+# READY
 # ============================================================
 
 @bot.event
 async def on_ready():
 
-    print(
-        f"Logged in as {bot.user}"
-    )
+    print(f"Logged in as {bot.user}")
+    print(f"Connected to {len(bot.guilds)} server(s)")
+    print("Staff applications loaded.")
+    print("Ticket system loaded.")
 
-    print(
-        f"Bot ID: {bot.user.id}"
-    )
-
-    print(
-        f"Connected to {len(bot.guilds)} server(s)"
-    )
-
-    print(
-        "Staff application system loaded."
-    )
-
-    # Persistent buttons
     bot.add_view(ApplyView())
+    bot.add_view(TicketPanelView())
 
 
 # ============================================================
-# RUN BOT
+# RUN
 # ============================================================
 
 bot.run(TOKEN)
