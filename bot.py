@@ -15,6 +15,7 @@ from discord import ui
 
 TOKEN = os.environ["TOKEN"]
 
+
 # ============================================================
 # TICKET CONFIG
 # ============================================================
@@ -27,24 +28,32 @@ APPEAL_CATEGORY_ID = 1536759712660455474
 
 STAFF_ROLE_ID = 1393951328061095976
 
+
 # ============================================================
 # WELCOME CONFIG
 # ============================================================
 
 WELCOME_CHANNEL_ID = 1397563706510151871
 
+
 # ============================================================
 # GIVEAWAY CONFIG
 # ============================================================
 
-# Role allowed to use giveaway commands
 GIVEAWAY_COMMAND_ROLE_ID = 1391071302890033355
 
-# Staff role pinged when giveaway winners are announced
 GIVEAWAY_STAFF_ROLE_ID = 1393951328061095976
 
-# Category for automatic giveaway winner tickets
 GIVEAWAY_TICKET_CATEGORY_ID = 1394270405707043059
+
+
+# ============================================================
+# COUNTING CONFIG
+# ============================================================
+
+COUNTING_CHANNEL_ID = 1389308013608698058
+
+COUNTING_TIMEOUT_SECONDS = 5 * 60
 
 
 # ============================================================
@@ -63,17 +72,18 @@ bot = commands.Bot(
 
 
 # ============================================================
-# ACTIVE TICKETS
+# STORAGE
 # ============================================================
 
 active_tickets = {}
 
-
-# ============================================================
-# ACTIVE GIVEAWAYS
-# ============================================================
-
 active_giveaways = {}
+
+# Current number that must be counted
+counting_number = 1
+
+# Prevents multiple giveaway finish tasks
+giveaway_tasks = set()
 
 
 # ============================================================
@@ -126,7 +136,6 @@ class TicketSelect(ui.Select):
                 emoji="⚖️",
                 value="appeal"
             )
-
         ]
 
         super().__init__(
@@ -170,7 +179,7 @@ async def create_ticket(
     guild = interaction.guild
     user = interaction.user
 
-    for channel_id, creator_id in active_tickets.items():
+    for channel_id, creator_id in list(active_tickets.items()):
 
         if creator_id == user.id:
 
@@ -188,9 +197,17 @@ async def create_ticket(
 
                 return
 
+            active_tickets.pop(
+                channel_id,
+                None
+            )
+
     categories = {
+
         "support": SUPPORT_CATEGORY_ID,
+
         "billing": BILLING_CATEGORY_ID,
+
         "appeal": APPEAL_CATEGORY_ID
     }
 
@@ -370,11 +387,7 @@ async def close(ctx):
 
 def parse_duration(duration_text):
 
-    duration_text = (
-        duration_text
-        .lower()
-        .strip()
-    )
+    duration_text = duration_text.lower().strip()
 
     pattern = (
         r"^\s*"
@@ -481,7 +494,7 @@ def create_giveaway_embed(giveaway):
 
 
 # ============================================================
-# GIVEAWAY FORM
+# GIVEAWAY CREATION VIEW
 # ============================================================
 
 class GiveawayFormView(ui.View):
@@ -580,13 +593,7 @@ class GiveawayModal(ui.Modal):
 
             await interaction.response.send_message(
                 "❌ Invalid duration.\n\n"
-                "Examples:\n"
-                "`30s`\n"
-                "`10m`\n"
-                "`2h`\n"
-                "`3d`\n"
-                "`30 mins`\n"
-                "`2 hours`",
+                "Examples: `30s`, `10m`, `2h`, `3d`",
                 ephemeral=True
             )
 
@@ -679,15 +686,21 @@ class GiveawayModal(ui.Modal):
             ephemeral=True
         )
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             finish_giveaway(
                 giveaway_message.id
             )
         )
 
+        giveaway_tasks.add(task)
+
+        task.add_done_callback(
+            giveaway_tasks.discard
+        )
+
 
 # ============================================================
-# GIVEAWAY BUTTON
+# GIVEAWAY ENTER VIEW
 # ============================================================
 
 class GiveawayView(ui.View):
@@ -732,9 +745,7 @@ class GiveawayEnterButton(ui.Button):
 
             return
 
-        entries = giveaway[
-            "entries"
-        ]
+        entries = giveaway["entries"]
 
         if interaction.user.id in entries:
 
@@ -787,10 +798,6 @@ async def giveaway_track(
     giveaway_message_id: str = None
 ):
 
-    # --------------------------------------------------------
-    # Permission check
-    # --------------------------------------------------------
-
     giveaway_role = ctx.guild.get_role(
         GIVEAWAY_COMMAND_ROLE_ID
     )
@@ -813,10 +820,6 @@ async def giveaway_track(
 
         return
 
-    # --------------------------------------------------------
-    # Message ID required
-    # --------------------------------------------------------
-
     if giveaway_message_id is None:
 
         await ctx.send(
@@ -825,10 +828,6 @@ async def giveaway_track(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Validate ID
-    # --------------------------------------------------------
 
     try:
 
@@ -845,10 +844,6 @@ async def giveaway_track(
 
         return
 
-    # --------------------------------------------------------
-    # Giveaway must be active
-    # --------------------------------------------------------
-
     giveaway = active_giveaways.get(
         giveaway_id
     )
@@ -862,28 +857,15 @@ async def giveaway_track(
 
         return
 
-    # --------------------------------------------------------
-    # Make sure command is in same guild
-    # --------------------------------------------------------
-
     if giveaway["channel_id"] != ctx.channel.id:
 
-        giveaway_channel = bot.get_channel(
-            giveaway["channel_id"]
+        await ctx.send(
+            "❌ You must use `!gwaytrack` in the same "
+            "channel as the giveaway.",
+            delete_after=5
         )
 
-        if giveaway_channel is None:
-
-            await ctx.send(
-                "❌ I couldn't find the giveaway channel.",
-                delete_after=5
-            )
-
-            return
-
-    # --------------------------------------------------------
-    # Get entrants
-    # --------------------------------------------------------
+        return
 
     entrant_ids = list(
         giveaway["entries"]
@@ -911,10 +893,6 @@ async def giveaway_track(
 
         return
 
-    # --------------------------------------------------------
-    # Fetch users
-    # --------------------------------------------------------
-
     users = []
 
     for user_id in entrant_ids:
@@ -931,15 +909,10 @@ async def giveaway_track(
 
         except discord.HTTPException:
 
-            continue
-
-    # --------------------------------------------------------
-    # Build styled pages
-    # --------------------------------------------------------
+            pass
 
     pages = []
 
-    # 5 users per page
     users_per_page = 5
 
     for page_start in range(
@@ -957,12 +930,9 @@ async def giveaway_track(
             title="🎉 Giveaway Entrants",
             description=(
                 f"**Prize:** {giveaway['prize']}\n"
-                f"**Total Entries:** "
-                f"{len(entrant_ids)}\n"
-                f"**Winners:** "
-                f"{giveaway['winner_count']}\n"
-                f"**Ends:** "
-                f"<t:{giveaway['end_time']}:R>\n\n"
+                f"**Total Entries:** {len(entrant_ids)}\n"
+                f"**Winners:** {giveaway['winner_count']}\n"
+                f"**Ends:** <t:{giveaway['end_time']}:R>\n\n"
                 "━━━━━━━━━━━━━━━━━━━━"
             ),
             color=discord.Color.gold()
@@ -973,7 +943,6 @@ async def giveaway_track(
             start=page_start + 1
         ):
 
-            # Try to get full user information
             banner_text = "No banner"
 
             try:
@@ -1001,19 +970,22 @@ async def giveaway_track(
                 inline=False
             )
 
-        # Use first user's avatar as page thumbnail
         if page_users:
 
             embed.set_thumbnail(
                 url=page_users[0].display_avatar.url
             )
 
+        total_pages = (
+            (len(users) - 1)
+            // users_per_page
+        ) + 1
+
         embed.set_footer(
             text=(
                 f"Page "
                 f"{(page_start // users_per_page) + 1}"
-                f"/"
-                f"{((len(users) - 1) // users_per_page) + 1}"
+                f"/{total_pages}"
                 f" • Giveaway ID: {giveaway_id}"
             )
         )
@@ -1021,10 +993,6 @@ async def giveaway_track(
         pages.append(
             embed
         )
-
-    # --------------------------------------------------------
-    # Send first page
-    # --------------------------------------------------------
 
     if len(pages) == 1:
 
@@ -1166,8 +1134,13 @@ async def finish_giveaway(
 
         return
 
+    wait_time = max(
+        0,
+        giveaway["end_time"] - int(time.time())
+    )
+
     await asyncio.sleep(
-        giveaway["duration_seconds"]
+        wait_time
     )
 
     giveaway = active_giveaways.pop(
@@ -1187,10 +1160,6 @@ async def finish_giveaway(
 
         return
 
-    # --------------------------------------------------------
-    # Disable giveaway button
-    # --------------------------------------------------------
-
     try:
 
         giveaway_message = await channel.fetch_message(
@@ -1205,10 +1174,6 @@ async def finish_giveaway(
 
         pass
 
-    # --------------------------------------------------------
-    # Get entries
-    # --------------------------------------------------------
-
     entries = list(
         giveaway["entries"]
     )
@@ -1222,10 +1187,6 @@ async def finish_giveaway(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Pick winners
-    # --------------------------------------------------------
 
     winner_count = min(
         giveaway["winner_count"],
@@ -1264,18 +1225,10 @@ async def finish_giveaway(
 
         return
 
-    # --------------------------------------------------------
-    # Winner mentions
-    # --------------------------------------------------------
-
     winner_mentions = " ".join(
         user.mention
         for user in winners
     )
-
-    # --------------------------------------------------------
-    # Staff role
-    # --------------------------------------------------------
 
     staff_role = channel.guild.get_role(
         GIVEAWAY_STAFF_ROLE_ID
@@ -1283,29 +1236,22 @@ async def finish_giveaway(
 
     if staff_role:
 
-        staff_mention = (
-            staff_role.mention
-        )
+        staff_mention = staff_role.mention
 
     else:
 
         staff_mention = ""
 
-    # --------------------------------------------------------
-    # Winner announcement
-    # --------------------------------------------------------
-
     await channel.send(
         f"🎉 **GIVEAWAY WINNERS!** 🎉\n\n"
         f"**Prize:** {giveaway['prize']}\n\n"
         f"Congratulations to:\n"
-        f"{winner_mentions}\n\n"
-        f"{staff_mention}"
+        f"{winner_mentions}"
     )
 
-    # --------------------------------------------------------
-    # Winner ticket category
-    # --------------------------------------------------------
+    await channel.send(
+        f"{winner_mentions} {staff_mention}"
+    )
 
     category = channel.guild.get_channel(
         GIVEAWAY_TICKET_CATEGORY_ID
@@ -1329,10 +1275,6 @@ async def finish_giveaway(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Create ticket for every winner
-    # --------------------------------------------------------
 
     for winner in winners:
 
@@ -1458,7 +1400,7 @@ async def giveaway_command(ctx):
 
 
 # ============================================================
-# BASIC COMMANDS
+# PING
 # ============================================================
 
 @bot.command()
@@ -1469,9 +1411,17 @@ async def ping(ctx):
     )
 
 
+# ============================================================
+# PUNISH
+# ============================================================
+
 @bot.command()
 @commands.has_permissions(ban_members=True)
-async def punish(ctx, member: discord.Member):
+async def punish(
+    ctx,
+    member: discord.Member
+):
+
     await member.ban(
         reason=f"Banned by {ctx.author}"
     )
@@ -1479,6 +1429,50 @@ async def punish(ctx, member: discord.Member):
     await ctx.send(
         f"# {member.mention} has been punished! ❌"
     )
+
+
+# ============================================================
+# UNPUNISH
+# ============================================================
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def unpunish(
+    ctx,
+    user_id: int
+):
+
+    try:
+
+        user = await bot.fetch_user(
+            user_id
+        )
+
+        await ctx.guild.unban(
+            user,
+            reason=f"Unpunished by {ctx.author}"
+        )
+
+        await ctx.send(
+            f"# {user.mention} has been unpunished! ✅"
+        )
+
+    except discord.NotFound:
+
+        await ctx.send(
+            "# User is not banned or could not be found. ❌"
+        )
+
+    except discord.Forbidden:
+
+        await ctx.send(
+            "# I don't have permission to unban that user. ❌"
+        )
+
+
+# ============================================================
+# INFO
+# ============================================================
 
 @bot.command()
 async def info(
@@ -1499,30 +1493,6 @@ async def info(
         inline=False
     )
 
-@bot.command()
-@commands.has_permissions(ban_members=True)
-async def unpunish(ctx, user_id: int):
-    try:
-        user = await bot.fetch_user(user_id)
-        await ctx.guild.unban(
-            user,
-            reason=f"Unpunished by {ctx.author}"
-        )
-
-        await ctx.send(
-            f"# {user.mention} has been unpunished! ✅"
-        )
-
-    except discord.NotFound:
-        await ctx.send(
-            "# User is not banned or could not be found. ❌"
-        )
-
-    except discord.Forbidden:
-        await ctx.send(
-            "# I don't have permission to unban that user. ❌"
-        )
-
     if member.joined_at:
 
         embed.add_field(
@@ -1541,6 +1511,10 @@ async def unpunish(ctx, user_id: int):
         embed=embed
     )
 
+
+# ============================================================
+# KICK
+# ============================================================
 
 @bot.command()
 @commands.has_permissions(
@@ -1562,6 +1536,10 @@ async def kick(
         f"Reason: {reason}"
     )
 
+
+# ============================================================
+# BAN
+# ============================================================
 
 @bot.command()
 @commands.has_permissions(
@@ -1643,6 +1621,133 @@ async def on_member_join(member):
 
 
 # ============================================================
+# COUNTING SYSTEM
+# ============================================================
+
+@bot.event
+async def on_message(message):
+
+    global counting_number
+
+    if message.author.bot:
+
+        return
+
+    # ========================================================
+    # COUNTING CHANNEL
+    # ========================================================
+
+    if message.channel.id == COUNTING_CHANNEL_ID:
+
+        content = message.content.strip()
+
+        # Correct number
+        if content.isdigit():
+
+            try:
+
+                number = int(content)
+
+            except ValueError:
+
+                number = -1
+
+            if number == counting_number:
+
+                try:
+
+                    await message.add_reaction("✅")
+
+                except discord.HTTPException:
+
+                    pass
+
+                counting_number += 1
+
+            else:
+
+                try:
+
+                    await message.delete()
+
+                except discord.HTTPException:
+
+                    pass
+
+                try:
+
+                    await message.author.timeout(
+                        discord.utils.utcnow()
+                        + discord.timedelta(
+                            seconds=COUNTING_TIMEOUT_SECONDS
+                        ),
+                        reason="Incorrect number in counting channel"
+                    )
+
+                except AttributeError:
+
+                    # Compatibility fallback
+                    try:
+
+                        until = (
+                            discord.utils.utcnow()
+                            + __import__("datetime").timedelta(
+                                seconds=COUNTING_TIMEOUT_SECONDS
+                            )
+                        )
+
+                        await message.author.timeout(
+                            until,
+                            reason="Incorrect number in counting channel"
+                        )
+
+                    except discord.HTTPException:
+
+                        pass
+
+                except discord.HTTPException:
+
+                    pass
+
+        # Anything that isn't a number
+        else:
+
+            try:
+
+                await message.delete()
+
+            except discord.HTTPException:
+
+                pass
+
+            try:
+
+                until = (
+                    discord.utils.utcnow()
+                    + __import__("datetime").timedelta(
+                        seconds=COUNTING_TIMEOUT_SECONDS
+                    )
+                )
+
+                await message.author.timeout(
+                    until,
+                    reason="Non-number message in counting channel"
+                )
+
+            except discord.HTTPException:
+
+                pass
+
+        return
+
+    # ========================================================
+    # NORMAL COMMAND PROCESSING
+    # ========================================================
+
+    await bot.process_commands(message)
+
+
+# ============================================================
 # BOT READY
 # ============================================================
 
@@ -1667,6 +1772,10 @@ async def on_ready():
 
     print(
         "Giveaway system loaded."
+    )
+
+    print(
+        "Counting system loaded."
     )
 
     try:
