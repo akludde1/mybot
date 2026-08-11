@@ -1499,6 +1499,30 @@ async def info(
         inline=False
     )
 
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def unpunish(ctx, user_id: int):
+    try:
+        user = await bot.fetch_user(user_id)
+        await ctx.guild.unban(
+            user,
+            reason=f"Unpunished by {ctx.author}"
+        )
+
+        await ctx.send(
+            f"# {user.mention} has been unpunished! ✅"
+        )
+
+    except discord.NotFound:
+        await ctx.send(
+            "# User is not banned or could not be found. ❌"
+        )
+
+    except discord.Forbidden:
+        await ctx.send(
+            "# I don't have permission to unban that user. ❌"
+        )
+
     if member.joined_at:
 
         embed.add_field(
