@@ -37,13 +37,13 @@ WELCOME_CHANNEL_ID = 1397563706510151871
 # GIVEAWAY CONFIG
 # ============================================================
 
-# Role allowed to use !gway
+# Role allowed to use giveaway commands
 GIVEAWAY_COMMAND_ROLE_ID = 1391071302890033355
 
-# Staff role pinged when winners are announced
+# Staff role pinged when giveaway winners are announced
 GIVEAWAY_STAFF_ROLE_ID = 1393951328061095976
 
-# Category where automatic giveaway winner tickets are created
+# Category for automatic giveaway winner tickets
 GIVEAWAY_TICKET_CATEGORY_ID = 1394270405707043059
 
 
@@ -66,7 +66,6 @@ bot = commands.Bot(
 # ACTIVE TICKETS
 # ============================================================
 
-# channel_id -> creator_id
 active_tickets = {}
 
 
@@ -74,7 +73,6 @@ active_tickets = {}
 # ACTIVE GIVEAWAYS
 # ============================================================
 
-# giveaway_message_id -> giveaway data
 active_giveaways = {}
 
 
@@ -172,10 +170,6 @@ async def create_ticket(
     guild = interaction.guild
     user = interaction.user
 
-    # --------------------------------------------------------
-    # Check if user already has a ticket
-    # --------------------------------------------------------
-
     for channel_id, creator_id in active_tickets.items():
 
         if creator_id == user.id:
@@ -194,10 +188,6 @@ async def create_ticket(
 
                 return
 
-    # --------------------------------------------------------
-    # Categories
-    # --------------------------------------------------------
-
     categories = {
         "support": SUPPORT_CATEGORY_ID,
         "billing": BILLING_CATEGORY_ID,
@@ -207,10 +197,6 @@ async def create_ticket(
     category = guild.get_channel(
         categories[ticket_type]
     )
-
-    # --------------------------------------------------------
-    # Staff role
-    # --------------------------------------------------------
 
     staff_role = guild.get_role(
         STAFF_ROLE_ID
@@ -233,10 +219,6 @@ async def create_ticket(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Permissions
-    # --------------------------------------------------------
 
     overwrites = {
 
@@ -265,10 +247,6 @@ async def create_ticket(
             )
     }
 
-    # --------------------------------------------------------
-    # Channel name
-    # --------------------------------------------------------
-
     safe_name = "".join(
         character
         if character.isalnum() or character == "-"
@@ -277,10 +255,6 @@ async def create_ticket(
     )
 
     channel_name = f"ticket-{safe_name}"
-
-    # --------------------------------------------------------
-    # Create ticket
-    # --------------------------------------------------------
 
     ticket_channel = await guild.create_text_channel(
         name=channel_name,
@@ -293,28 +267,16 @@ async def create_ticket(
         ticket_channel.id
     ] = user.id
 
-    # --------------------------------------------------------
-    # Confirmation
-    # --------------------------------------------------------
-
     await interaction.response.send_message(
         f"✅ Your ticket has been created: "
         f"{ticket_channel.mention}",
         ephemeral=True
     )
 
-    # --------------------------------------------------------
-    # Opening message
-    # --------------------------------------------------------
-
     message = await ticket_channel.send(
         f"Hello {user.mention}, a staff member will be with you shortly.\n"
         f"{staff_role.mention}"
     )
-
-    # --------------------------------------------------------
-    # Pin opening message
-    # --------------------------------------------------------
 
     try:
 
@@ -328,7 +290,7 @@ async def create_ticket(
 
 
 # ============================================================
-# SECRET TICKET PANEL COMMAND
+# SECRET TICKET PANEL
 # ============================================================
 
 @bot.command(
@@ -371,10 +333,6 @@ async def close(ctx):
         STAFF_ROLE_ID
     )
 
-    # --------------------------------------------------------
-    # Staff check
-    # --------------------------------------------------------
-
     if (
         staff_role is None
         or staff_role not in ctx.author.roles
@@ -387,10 +345,6 @@ async def close(ctx):
 
         return
 
-    # --------------------------------------------------------
-    # Ticket check
-    # --------------------------------------------------------
-
     if ctx.channel.id not in active_tickets:
 
         await ctx.send(
@@ -400,18 +354,10 @@ async def close(ctx):
 
         return
 
-    # --------------------------------------------------------
-    # Remove ticket
-    # --------------------------------------------------------
-
     active_tickets.pop(
         ctx.channel.id,
         None
     )
-
-    # --------------------------------------------------------
-    # Delete instantly
-    # --------------------------------------------------------
 
     await ctx.channel.delete(
         reason=f"Ticket closed by {ctx.author}"
@@ -535,7 +481,7 @@ def create_giveaway_embed(giveaway):
 
 
 # ============================================================
-# GIVEAWAY FORM VIEW
+# GIVEAWAY FORM
 # ============================================================
 
 class GiveawayFormView(ui.View):
@@ -553,9 +499,7 @@ class GiveawayFormView(ui.View):
         )
 
 
-class GiveawayCreateButton(
-    ui.Button
-):
+class GiveawayCreateButton(ui.Button):
 
     def __init__(self):
 
@@ -628,10 +572,6 @@ class GiveawayModal(ui.Modal):
         interaction
     ):
 
-        # ----------------------------------------------------
-        # Parse duration
-        # ----------------------------------------------------
-
         duration_seconds = parse_duration(
             self.duration.value
         )
@@ -661,10 +601,6 @@ class GiveawayModal(ui.Modal):
 
             return
 
-        # ----------------------------------------------------
-        # Parse winner count
-        # ----------------------------------------------------
-
         try:
 
             winner_count = int(
@@ -689,18 +625,10 @@ class GiveawayModal(ui.Modal):
 
             return
 
-        # ----------------------------------------------------
-        # Calculate ending timestamp
-        # ----------------------------------------------------
-
         end_time = (
             int(time.time())
             + duration_seconds
         )
-
-        # ----------------------------------------------------
-        # Create giveaway data
-        # ----------------------------------------------------
 
         giveaway = {
 
@@ -731,20 +659,12 @@ class GiveawayModal(ui.Modal):
                 interaction.user.id
         }
 
-        # ----------------------------------------------------
-        # Send giveaway
-        # ----------------------------------------------------
-
         giveaway_message = await self.channel.send(
             embed=create_giveaway_embed(
                 giveaway
             ),
             view=GiveawayView()
         )
-
-        # ----------------------------------------------------
-        # Save message ID
-        # ----------------------------------------------------
 
         giveaway["message_id"] = (
             giveaway_message.id
@@ -754,18 +674,10 @@ class GiveawayModal(ui.Modal):
             giveaway_message.id
         ] = giveaway
 
-        # ----------------------------------------------------
-        # Private confirmation
-        # ----------------------------------------------------
-
         await interaction.response.send_message(
             "✅ Giveaway created successfully!",
             ephemeral=True
         )
-
-        # ----------------------------------------------------
-        # Start giveaway timer
-        # ----------------------------------------------------
 
         asyncio.create_task(
             finish_giveaway(
@@ -775,7 +687,7 @@ class GiveawayModal(ui.Modal):
 
 
 # ============================================================
-# GIVEAWAY ENTRY VIEW
+# GIVEAWAY BUTTON
 # ============================================================
 
 class GiveawayView(ui.View):
@@ -791,9 +703,7 @@ class GiveawayView(ui.View):
         )
 
 
-class GiveawayEnterButton(
-    ui.Button
-):
+class GiveawayEnterButton(ui.Button):
 
     def __init__(self):
 
@@ -826,23 +736,15 @@ class GiveawayEnterButton(
             "entries"
         ]
 
-        # ----------------------------------------------------
-        # Remove entry
-        # ----------------------------------------------------
-
         if interaction.user.id in entries:
 
             entries.remove(
                 interaction.user.id
             )
 
-            message = (
+            response = (
                 "❌ You have left the giveaway."
             )
-
-        # ----------------------------------------------------
-        # Add entry
-        # ----------------------------------------------------
 
         else:
 
@@ -850,13 +752,9 @@ class GiveawayEnterButton(
                 interaction.user.id
             )
 
-            message = (
+            response = (
                 "🎉 You have entered the giveaway!"
             )
-
-        # ----------------------------------------------------
-        # Update giveaway embed
-        # ----------------------------------------------------
 
         try:
 
@@ -871,13 +769,384 @@ class GiveawayEnterButton(
 
             pass
 
-        # ----------------------------------------------------
-        # Tell user
-        # ----------------------------------------------------
-
         await interaction.response.send_message(
-            message,
+            response,
             ephemeral=True
+        )
+
+
+# ============================================================
+# GIVEAWAY TRACK
+# ============================================================
+
+@bot.command(
+    name="gwaytrack"
+)
+async def giveaway_track(
+    ctx,
+    giveaway_message_id: str = None
+):
+
+    # --------------------------------------------------------
+    # Permission check
+    # --------------------------------------------------------
+
+    giveaway_role = ctx.guild.get_role(
+        GIVEAWAY_COMMAND_ROLE_ID
+    )
+
+    if giveaway_role is None:
+
+        await ctx.send(
+            "❌ Giveaway command role was not found.",
+            delete_after=5
+        )
+
+        return
+
+    if giveaway_role not in ctx.author.roles:
+
+        await ctx.send(
+            "❌ You don't have permission to use this command.",
+            delete_after=5
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Message ID required
+    # --------------------------------------------------------
+
+    if giveaway_message_id is None:
+
+        await ctx.send(
+            "❌ Usage: `!gwaytrack <giveaway message ID>`",
+            delete_after=5
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Validate ID
+    # --------------------------------------------------------
+
+    try:
+
+        giveaway_id = int(
+            giveaway_message_id
+        )
+
+    except ValueError:
+
+        await ctx.send(
+            "❌ That is not a valid message ID.",
+            delete_after=5
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Giveaway must be active
+    # --------------------------------------------------------
+
+    giveaway = active_giveaways.get(
+        giveaway_id
+    )
+
+    if giveaway is None:
+
+        await ctx.send(
+            "❌ That giveaway is not active or doesn't exist.",
+            delete_after=5
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Make sure command is in same guild
+    # --------------------------------------------------------
+
+    if giveaway["channel_id"] != ctx.channel.id:
+
+        giveaway_channel = bot.get_channel(
+            giveaway["channel_id"]
+        )
+
+        if giveaway_channel is None:
+
+            await ctx.send(
+                "❌ I couldn't find the giveaway channel.",
+                delete_after=5
+            )
+
+            return
+
+    # --------------------------------------------------------
+    # Get entrants
+    # --------------------------------------------------------
+
+    entrant_ids = list(
+        giveaway["entries"]
+    )
+
+    if not entrant_ids:
+
+        embed = discord.Embed(
+            title="🎉 Giveaway Entrants",
+            description=(
+                f"**Prize:** {giveaway['prize']}\n\n"
+                "**Entries:** 0\n\n"
+                "Nobody has entered this giveaway yet."
+            ),
+            color=discord.Color.gold()
+        )
+
+        embed.set_footer(
+            text=f"Giveaway ID: {giveaway_id}"
+        )
+
+        await ctx.send(
+            embed=embed
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Fetch users
+    # --------------------------------------------------------
+
+    users = []
+
+    for user_id in entrant_ids:
+
+        try:
+
+            user = await bot.fetch_user(
+                user_id
+            )
+
+            users.append(
+                user
+            )
+
+        except discord.HTTPException:
+
+            continue
+
+    # --------------------------------------------------------
+    # Build styled pages
+    # --------------------------------------------------------
+
+    pages = []
+
+    # 5 users per page
+    users_per_page = 5
+
+    for page_start in range(
+        0,
+        len(users),
+        users_per_page
+    ):
+
+        page_users = users[
+            page_start:
+            page_start + users_per_page
+        ]
+
+        embed = discord.Embed(
+            title="🎉 Giveaway Entrants",
+            description=(
+                f"**Prize:** {giveaway['prize']}\n"
+                f"**Total Entries:** "
+                f"{len(entrant_ids)}\n"
+                f"**Winners:** "
+                f"{giveaway['winner_count']}\n"
+                f"**Ends:** "
+                f"<t:{giveaway['end_time']}:R>\n\n"
+                "━━━━━━━━━━━━━━━━━━━━"
+            ),
+            color=discord.Color.gold()
+        )
+
+        for index, user in enumerate(
+            page_users,
+            start=page_start + 1
+        ):
+
+            # Try to get full user information
+            banner_text = "No banner"
+
+            try:
+
+                full_user = await bot.fetch_user(
+                    user.id
+                )
+
+                if full_user.banner:
+
+                    banner_text = "Has banner"
+
+            except discord.HTTPException:
+
+                pass
+
+            embed.add_field(
+                name=f"#{index}  {user.name}",
+                value=(
+                    f"**Username:** `{user}`\n"
+                    f"**ID:** `{user.id}`\n"
+                    f"**Banner:** {banner_text}\n"
+                    f"[Avatar]({user.display_avatar.url})"
+                ),
+                inline=False
+            )
+
+        # Use first user's avatar as page thumbnail
+        if page_users:
+
+            embed.set_thumbnail(
+                url=page_users[0].display_avatar.url
+            )
+
+        embed.set_footer(
+            text=(
+                f"Page "
+                f"{(page_start // users_per_page) + 1}"
+                f"/"
+                f"{((len(users) - 1) // users_per_page) + 1}"
+                f" • Giveaway ID: {giveaway_id}"
+            )
+        )
+
+        pages.append(
+            embed
+        )
+
+    # --------------------------------------------------------
+    # Send first page
+    # --------------------------------------------------------
+
+    if len(pages) == 1:
+
+        await ctx.send(
+            embed=pages[0]
+        )
+
+        return
+
+    await ctx.send(
+        embed=pages[0],
+        view=GiveawayTrackView(
+            pages,
+            ctx.author.id
+        )
+    )
+
+
+# ============================================================
+# GIVEAWAY TRACK PAGINATION
+# ============================================================
+
+class GiveawayTrackView(ui.View):
+
+    def __init__(
+        self,
+        pages,
+        author_id
+    ):
+
+        super().__init__(
+            timeout=180
+        )
+
+        self.pages = pages
+        self.author_id = author_id
+        self.current_page = 0
+
+        self.previous_button.disabled = True
+
+        if len(pages) <= 1:
+
+            self.next_button.disabled = True
+
+    @ui.button(
+        label="Previous",
+        emoji="⬅️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def previous_button(
+        self,
+        interaction,
+        button
+    ):
+
+        if interaction.user.id != self.author_id:
+
+            await interaction.response.send_message(
+                "❌ Only the person who used `!gwaytrack` "
+                "can control these buttons.",
+                ephemeral=True
+            )
+
+            return
+
+        if self.current_page > 0:
+
+            self.current_page -= 1
+
+        self.previous_button.disabled = (
+            self.current_page == 0
+        )
+
+        self.next_button.disabled = (
+            self.current_page == len(self.pages) - 1
+        )
+
+        await interaction.response.edit_message(
+            embed=self.pages[
+                self.current_page
+            ],
+            view=self
+        )
+
+    @ui.button(
+        label="Next",
+        emoji="➡️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next_button(
+        self,
+        interaction,
+        button
+    ):
+
+        if interaction.user.id != self.author_id:
+
+            await interaction.response.send_message(
+                "❌ Only the person who used `!gwaytrack` "
+                "can control these buttons.",
+                ephemeral=True
+            )
+
+            return
+
+        if self.current_page < len(self.pages) - 1:
+
+            self.current_page += 1
+
+        self.previous_button.disabled = (
+            self.current_page == 0
+        )
+
+        self.next_button.disabled = (
+            self.current_page == len(self.pages) - 1
+        )
+
+        await interaction.response.edit_message(
+            embed=self.pages[
+                self.current_page
+            ],
+            view=self
         )
 
 
@@ -897,17 +1166,9 @@ async def finish_giveaway(
 
         return
 
-    # --------------------------------------------------------
-    # Wait
-    # --------------------------------------------------------
-
     await asyncio.sleep(
         giveaway["duration_seconds"]
     )
-
-    # --------------------------------------------------------
-    # Remove giveaway from active list
-    # --------------------------------------------------------
 
     giveaway = active_giveaways.pop(
         giveaway_id,
@@ -918,10 +1179,6 @@ async def finish_giveaway(
 
         return
 
-    # --------------------------------------------------------
-    # Get channel
-    # --------------------------------------------------------
-
     channel = bot.get_channel(
         giveaway["channel_id"]
     )
@@ -931,7 +1188,7 @@ async def finish_giveaway(
         return
 
     # --------------------------------------------------------
-    # Disable button
+    # Disable giveaway button
     # --------------------------------------------------------
 
     try:
@@ -949,16 +1206,12 @@ async def finish_giveaway(
         pass
 
     # --------------------------------------------------------
-    # Entries
+    # Get entries
     # --------------------------------------------------------
 
     entries = list(
         giveaway["entries"]
     )
-
-    # --------------------------------------------------------
-    # Nobody entered
-    # --------------------------------------------------------
 
     if not entries:
 
@@ -1068,10 +1321,6 @@ async def finish_giveaway(
 
         return
 
-    # --------------------------------------------------------
-    # Staff role check
-    # --------------------------------------------------------
-
     if staff_role is None:
 
         await channel.send(
@@ -1082,7 +1331,7 @@ async def finish_giveaway(
         return
 
     # --------------------------------------------------------
-    # Create ticket for each winner
+    # Create ticket for every winner
     # --------------------------------------------------------
 
     for winner in winners:
@@ -1164,10 +1413,6 @@ async def giveaway_command(ctx):
         GIVEAWAY_COMMAND_ROLE_ID
     )
 
-    # --------------------------------------------------------
-    # Role check
-    # --------------------------------------------------------
-
     if role is None:
 
         await ctx.send(
@@ -1185,10 +1430,6 @@ async def giveaway_command(ctx):
         )
 
         return
-
-    # --------------------------------------------------------
-    # Open private DM form
-    # --------------------------------------------------------
 
     try:
 
@@ -1357,12 +1598,10 @@ async def on_member_join(member):
         color=discord.Color.blurple()
     )
 
-    # User profile picture
     embed.set_thumbnail(
         url=member.display_avatar.url
     )
 
-    # User banner
     try:
 
         user = await bot.fetch_user(
@@ -1415,7 +1654,6 @@ async def on_ready():
         "Giveaway system loaded."
     )
 
-    # Persistent ticket dropdown
     try:
 
         bot.add_view(
@@ -1426,7 +1664,6 @@ async def on_ready():
 
         pass
 
-    # Persistent giveaway button
     try:
 
         bot.add_view(
