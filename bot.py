@@ -1641,6 +1641,20 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if bot.user in message.mentions:
+        await message.channel.send(
+            f"wsp {message.author.mention}? 👍"
+        )
+
+    await bot.process_commands(message)
+
+
 # ============================================================
 # BOT READY
 # ============================================================
