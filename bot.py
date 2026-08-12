@@ -3,7 +3,6 @@ import random
 import re
 import asyncio
 import time
-import datetime
 
 import discord
 from discord.ext import commands
@@ -52,9 +51,6 @@ GIVEAWAY_TICKET_CATEGORY_ID = 1394270405707043059
 
 COUNTING_CHANNEL_ID = 1389308013608698058
 
-counting_number = 1
-last_counter_id = None
-
 
 # ============================================================
 # BOT SETUP
@@ -71,11 +67,15 @@ bot = commands.Bot(
 
 
 # ============================================================
-# ACTIVE DATA
+# DATA
 # ============================================================
 
 active_tickets = {}
 active_giveaways = {}
+
+# Counting state
+count_number = 1
+last_counter_id = None
 
 
 # ============================================================
@@ -104,6 +104,7 @@ def ticket_embed():
 class TicketSelect(ui.Select):
 
     def __init__(self):
+
         options = [
             discord.SelectOption(
                 label="Support/Questions",
@@ -144,7 +145,10 @@ class TicketPanelView(ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(TicketSelect())
+
+        self.add_item(
+            TicketSelect()
+        )
 
 
 # ============================================================
@@ -156,6 +160,7 @@ async def create_ticket(interaction, ticket_type):
     guild = interaction.guild
     user = interaction.user
 
+    # Check if user already has a ticket
     for channel_id, creator_id in list(active_tickets.items()):
 
         if creator_id == user.id:
@@ -189,40 +194,48 @@ async def create_ticket(interaction, ticket_type):
     )
 
     if category is None:
+
         await interaction.response.send_message(
             "❌ Ticket category not found.",
             ephemeral=True
         )
+
         return
 
     if staff_role is None:
+
         await interaction.response.send_message(
             "❌ Staff role not found.",
             ephemeral=True
         )
+
         return
 
     overwrites = {
-        guild.default_role: discord.PermissionOverwrite(
-            view_channel=False
-        ),
 
-        user: discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            read_message_history=True,
-            attach_files=True,
-            embed_links=True
-        ),
+        guild.default_role:
+            discord.PermissionOverwrite(
+                view_channel=False
+            ),
 
-        staff_role: discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            read_message_history=True,
-            attach_files=True,
-            embed_links=True,
-            manage_messages=True
-        )
+        user:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True
+            ),
+
+        staff_role:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True,
+                manage_messages=True
+            )
     }
 
     safe_name = "".join(
@@ -263,7 +276,7 @@ async def create_ticket(interaction, ticket_type):
 
 
 # ============================================================
-# SECRET TICKET PANEL COMMAND
+# SECRET TICKET PANEL
 # ============================================================
 
 @bot.command(
@@ -276,10 +289,12 @@ async def ticket_panel(ctx):
     )
 
     if channel is None:
+
         await ctx.send(
             "❌ I couldn't find the ticket panel channel.",
             delete_after=5
         )
+
         return
 
     await channel.send(
@@ -304,21 +319,22 @@ async def close(ctx):
         STAFF_ROLE_ID
     )
 
-    if (
-        staff_role is None
-        or staff_role not in ctx.author.roles
-    ):
+    if staff_role is None or staff_role not in ctx.author.roles:
+
         await ctx.send(
             "❌ Only staff can close tickets.",
             delete_after=3
         )
+
         return
 
     if ctx.channel.id not in active_tickets:
+
         await ctx.send(
             "❌ This is not a ticket channel.",
             delete_after=3
         )
+
         return
 
     active_tickets.pop(
@@ -362,20 +378,17 @@ def parse_duration(duration_text):
     unit = match.group(2)
 
     if unit in [
-        "s", "sec", "secs",
-        "second", "seconds"
+        "s", "sec", "secs", "second", "seconds"
     ]:
         seconds = amount
 
     elif unit in [
-        "m", "min", "mins",
-        "minute", "minutes"
+        "m", "min", "mins", "minute", "minutes"
     ]:
         seconds = amount * 60
 
     elif unit in [
-        "h", "hr", "hrs",
-        "hour", "hours"
+        "h", "hr", "hrs", "hour", "hours"
     ]:
         seconds = amount * 60 * 60
 
@@ -424,13 +437,17 @@ def create_giveaway_embed(giveaway):
 
 
 # ============================================================
-# GIVEAWAY CREATOR VIEW
+# GIVEAWAY FORM VIEW
 # ============================================================
 
 class GiveawayFormView(ui.View):
 
     def __init__(self, channel):
-        super().__init__(timeout=300)
+
+        super().__init__(
+            timeout=300
+        )
+
         self.channel = channel
 
         self.add_item(
@@ -441,6 +458,7 @@ class GiveawayFormView(ui.View):
 class GiveawayCreateButton(ui.Button):
 
     def __init__(self):
+
         super().__init__(
             label="Create",
             style=discord.ButtonStyle.success
@@ -501,19 +519,23 @@ class GiveawayModal(ui.Modal):
         )
 
         if duration_seconds is None:
+
             await interaction.response.send_message(
                 "❌ Invalid duration.\n\n"
                 "Examples: `30s`, `10m`, `2h`, `3d`, "
                 "`30 mins`, `2 hours`",
                 ephemeral=True
             )
+
             return
 
         if duration_seconds <= 0:
+
             await interaction.response.send_message(
                 "❌ Duration must be greater than 0.",
                 ephemeral=True
             )
+
             return
 
         try:
@@ -521,17 +543,21 @@ class GiveawayModal(ui.Modal):
                 self.winners.value
             )
         except ValueError:
+
             await interaction.response.send_message(
                 "❌ Number of winners must be a number.",
                 ephemeral=True
             )
+
             return
 
         if winner_count < 1:
+
             await interaction.response.send_message(
                 "❌ You need at least 1 winner.",
                 ephemeral=True
             )
+
             return
 
         end_time = int(time.time()) + duration_seconds
@@ -549,9 +575,7 @@ class GiveawayModal(ui.Modal):
         }
 
         giveaway_message = await self.channel.send(
-            embed=create_giveaway_embed(
-                giveaway
-            ),
+            embed=create_giveaway_embed(giveaway),
             view=GiveawayView()
         )
 
@@ -574,12 +598,13 @@ class GiveawayModal(ui.Modal):
 
 
 # ============================================================
-# GIVEAWAY ENTER VIEW
+# GIVEAWAY BUTTON
 # ============================================================
 
 class GiveawayView(ui.View):
 
     def __init__(self):
+
         super().__init__(
             timeout=None
         )
@@ -592,6 +617,7 @@ class GiveawayView(ui.View):
 class GiveawayEnterButton(ui.Button):
 
     def __init__(self):
+
         super().__init__(
             label="Enter Giveaway",
             emoji="🎉",
@@ -606,10 +632,12 @@ class GiveawayEnterButton(ui.Button):
         )
 
         if giveaway is None:
+
             await interaction.response.send_message(
                 "❌ This giveaway has already ended.",
                 ephemeral=True
             )
+
             return
 
         entries = giveaway["entries"]
@@ -631,12 +659,12 @@ class GiveawayEnterButton(ui.Button):
             response = "🎉 You have entered the giveaway!"
 
         try:
+
             await interaction.message.edit(
-                embed=create_giveaway_embed(
-                    giveaway
-                ),
+                embed=create_giveaway_embed(giveaway),
                 view=GiveawayView()
             )
+
         except discord.HTTPException:
             pass
 
@@ -663,24 +691,30 @@ async def giveaway_track(
     )
 
     if giveaway_role is None:
+
         await ctx.send(
             "❌ Giveaway command role was not found.",
             delete_after=5
         )
+
         return
 
     if giveaway_role not in ctx.author.roles:
+
         await ctx.send(
             "❌ You don't have permission to use this command.",
             delete_after=5
         )
+
         return
 
     if giveaway_message_id is None:
+
         await ctx.send(
             "❌ Usage: `!gwaytrack <giveaway message ID>`",
             delete_after=5
         )
+
         return
 
     try:
@@ -688,10 +722,12 @@ async def giveaway_track(
             giveaway_message_id
         )
     except ValueError:
+
         await ctx.send(
             "❌ That is not a valid message ID.",
             delete_after=5
         )
+
         return
 
     giveaway = active_giveaways.get(
@@ -699,10 +735,12 @@ async def giveaway_track(
     )
 
     if giveaway is None:
+
         await ctx.send(
             "❌ That giveaway is not active or doesn't exist.",
             delete_after=5
         )
+
         return
 
     entrant_ids = list(
@@ -736,9 +774,11 @@ async def giveaway_track(
     for user_id in entrant_ids:
 
         try:
+
             user = await bot.fetch_user(
                 user_id
             )
+
             users.append(user)
 
         except discord.HTTPException:
@@ -763,12 +803,9 @@ async def giveaway_track(
             title="🎉 Giveaway Entrants",
             description=(
                 f"**Prize:** {giveaway['prize']}\n"
-                f"**Total Entries:** "
-                f"{len(entrant_ids)}\n"
-                f"**Winners:** "
-                f"{giveaway['winner_count']}\n"
-                f"**Ends:** "
-                f"<t:{giveaway['end_time']}:R>\n\n"
+                f"**Total Entries:** {len(entrant_ids)}\n"
+                f"**Winners:** {giveaway['winner_count']}\n"
+                f"**Ends:** <t:{giveaway['end_time']}:R>\n\n"
                 "━━━━━━━━━━━━━━━━━━━━"
             ),
             color=discord.Color.gold()
@@ -805,6 +842,7 @@ async def giveaway_track(
             )
 
         if page_users:
+
             embed.set_thumbnail(
                 url=page_users[0].display_avatar.url
             )
@@ -825,9 +863,11 @@ async def giveaway_track(
         pages.append(embed)
 
     if len(pages) == 1:
+
         await ctx.send(
             embed=pages[0]
         )
+
         return
 
     await ctx.send(
@@ -876,11 +916,13 @@ class GiveawayTrackView(ui.View):
     ):
 
         if interaction.user.id != self.author_id:
+
             await interaction.response.send_message(
                 "❌ Only the person who used `!gwaytrack` "
                 "can control these buttons.",
                 ephemeral=True
             )
+
             return
 
         if self.current_page > 0:
@@ -913,11 +955,13 @@ class GiveawayTrackView(ui.View):
     ):
 
         if interaction.user.id != self.author_id:
+
             await interaction.response.send_message(
                 "❌ Only the person who used `!gwaytrack` "
                 "can control these buttons.",
                 ephemeral=True
             )
+
             return
 
         if self.current_page < len(self.pages) - 1:
@@ -952,13 +996,8 @@ async def finish_giveaway(giveaway_id):
     if giveaway is None:
         return
 
-    wait_time = max(
-        0,
-        giveaway["end_time"] - int(time.time())
-    )
-
     await asyncio.sleep(
-        wait_time
+        giveaway["duration_seconds"]
     )
 
     giveaway = active_giveaways.pop(
@@ -1026,7 +1065,7 @@ async def finish_giveaway(giveaway_id):
             winners.append(user)
 
         except discord.HTTPException:
-            continue
+            pass
 
     if not winners:
 
@@ -1046,10 +1085,11 @@ async def finish_giveaway(giveaway_id):
         GIVEAWAY_STAFF_ROLE_ID
     )
 
-    if staff_role:
-        staff_mention = staff_role.mention
-    else:
-        staff_mention = ""
+    staff_mention = (
+        staff_role.mention
+        if staff_role
+        else ""
+    )
 
     await channel.send(
         f"🎉 **GIVEAWAY WINNERS!** 🎉\n\n"
@@ -1134,9 +1174,11 @@ async def finish_giveaway(giveaway_id):
         )
 
         try:
+
             await ticket_message.pin(
                 reason="Giveaway winner ticket opening message"
             )
+
         except discord.HTTPException:
             pass
 
@@ -1155,17 +1197,21 @@ async def giveaway_command(ctx):
     )
 
     if role is None:
+
         await ctx.send(
             "❌ Giveaway command role was not found.",
             delete_after=5
         )
+
         return
 
     if role not in ctx.author.roles:
+
         await ctx.send(
             "❌ You don't have permission to create giveaways.",
             delete_after=5
         )
+
         return
 
     try:
@@ -1195,27 +1241,12 @@ async def giveaway_command(ctx):
 
 
 # ============================================================
-# PING
-# ============================================================
-
-@bot.command()
-async def ping(ctx):
-
-    await ctx.send(
-        f"🏓 Pong! `{round(bot.latency * 1000)}ms`"
-    )
-
-
-# ============================================================
 # PUNISH
 # ============================================================
 
 @bot.command()
 @commands.has_permissions(ban_members=True)
-async def punish(
-    ctx,
-    member: discord.Member
-):
+async def punish(ctx, member: discord.Member):
 
     await member.ban(
         reason=f"Banned by {ctx.author}"
@@ -1232,10 +1263,7 @@ async def punish(
 
 @bot.command()
 @commands.has_permissions(ban_members=True)
-async def unpunish(
-    ctx,
-    user_id: int
-):
+async def unpunish(ctx, user_id: int):
 
     try:
 
@@ -1312,9 +1340,7 @@ async def info(
 # ============================================================
 
 @bot.command()
-@commands.has_permissions(
-    kick_members=True
-)
+@commands.has_permissions(kick_members=True)
 async def kick(
     ctx,
     member: discord.Member,
@@ -1337,9 +1363,7 @@ async def kick(
 # ============================================================
 
 @bot.command()
-@commands.has_permissions(
-    ban_members=True
-)
+@commands.has_permissions(ban_members=True)
 async def ban(
     ctx,
     member: discord.Member,
@@ -1355,6 +1379,74 @@ async def ban(
         f"🔨 Banned {member.mention}. "
         f"Reason: {reason}"
     )
+
+
+# ============================================================
+# COUNT RESET
+# ============================================================
+
+@bot.command()
+async def countreset(ctx):
+
+    global count_number
+    global last_counter_id
+
+    staff_role = ctx.guild.get_role(
+        STAFF_ROLE_ID
+    )
+
+    if staff_role is None:
+
+        await ctx.send(
+            "❌ Staff role not found.",
+            delete_after=5
+        )
+
+        return
+
+    if staff_role not in ctx.author.roles:
+
+        await ctx.send(
+            "❌ You don't have permission to use this command.",
+            delete_after=5
+        )
+
+        return
+
+    count_number = 1
+    last_counter_id = None
+
+    await ctx.send(
+        "✅ Counting has been reset to **1**.",
+        delete_after=5
+    )
+
+
+# ============================================================
+# PING
+# ============================================================
+
+@bot.command()
+async def ping(ctx):
+
+    await ctx.send(
+        f"🏓 Pong! `{round(bot.latency * 1000)}ms`"
+    )
+
+
+# ============================================================
+# SAY
+# ============================================================
+
+@bot.command()
+async def say(ctx, *, message):
+
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass
+
+    await ctx.send(message)
 
 
 # ============================================================
@@ -1421,7 +1513,7 @@ async def on_member_join(member):
 @bot.event
 async def on_message(message):
 
-    global counting_number
+    global count_number
     global last_counter_id
 
     # Ignore bots
@@ -1434,40 +1526,10 @@ async def on_message(message):
 
     if message.channel.id == COUNTING_CHANNEL_ID:
 
-        # ----------------------------------------------------
-        # Must be a number
-        # ----------------------------------------------------
-
-        try:
-
-            number = int(
-                message.content.strip()
-            )
-
-        except ValueError:
-
-            try:
-                await message.delete()
-            except discord.HTTPException:
-                pass
-
-            try:
-
-                await message.author.timeout(
-                    datetime.timedelta(minutes=5),
-                    reason="Invalid counting message"
-                )
-
-            except (
-                discord.Forbidden,
-                discord.HTTPException
-            ):
-                pass
-
-            return
+        content = message.content.strip()
 
         # ----------------------------------------------------
-        # Can't count twice in a row
+        # User tried to count twice in a row
         # ----------------------------------------------------
 
         if message.author.id == last_counter_id:
@@ -1480,23 +1542,37 @@ async def on_message(message):
             try:
 
                 await message.author.timeout(
-                    datetime.timedelta(minutes=5),
+                    discord.utils.utcnow()
+                    + discord.timedelta(minutes=5),
                     reason="Counting twice in a row"
                 )
 
-            except (
-                discord.Forbidden,
-                discord.HTTPException
-            ):
+            except AttributeError:
+
+                # Compatibility fallback
+                try:
+                    await message.author.timeout(
+                        discord.utils.utcnow()
+                        + __import__("datetime").timedelta(
+                            minutes=5
+                        ),
+                        reason="Counting twice in a row"
+                    )
+                except discord.HTTPException:
+                    pass
+
+            except discord.HTTPException:
                 pass
 
             return
 
         # ----------------------------------------------------
-        # Wrong number
+        # Check if message is a valid number
         # ----------------------------------------------------
 
-        if number != counting_number:
+        try:
+            number = int(content)
+        except ValueError:
 
             try:
                 await message.delete()
@@ -1506,14 +1582,14 @@ async def on_message(message):
             try:
 
                 await message.author.timeout(
-                    datetime.timedelta(minutes=5),
-                    reason="Wrong counting number"
+                    discord.utils.utcnow()
+                    + __import__("datetime").timedelta(
+                        minutes=5
+                    ),
+                    reason="Invalid counting message"
                 )
 
-            except (
-                discord.Forbidden,
-                discord.HTTPException
-            ):
+            except discord.HTTPException:
                 pass
 
             return
@@ -1522,23 +1598,44 @@ async def on_message(message):
         # Correct number
         # ----------------------------------------------------
 
+        if number == count_number:
+
+            try:
+                await message.add_reaction("✅")
+            except discord.HTTPException:
+                pass
+
+            count_number += 1
+            last_counter_id = message.author.id
+
+            return
+
+        # ----------------------------------------------------
+        # Wrong number
+        # ----------------------------------------------------
+
+        try:
+            await message.delete()
+        except discord.HTTPException:
+            pass
+
         try:
 
-            await message.add_reaction(
-                "✅"
+            await message.author.timeout(
+                discord.utils.utcnow()
+                + __import__("datetime").timedelta(
+                    minutes=5
+                ),
+                reason="Wrong counting number"
             )
 
         except discord.HTTPException:
             pass
 
-        last_counter_id = message.author.id
-
-        counting_number += 1
-
         return
 
     # ========================================================
-    # ALL OTHER MESSAGES / COMMANDS
+    # NORMAL COMMAND PROCESSING
     # ========================================================
 
     await bot.process_commands(message)
